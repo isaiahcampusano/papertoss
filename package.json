@@ -1,0 +1,13 @@
+{
+  "name": "papertoss",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A small, deterministic game-logic engine for a Paper Toss clone.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
