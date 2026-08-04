@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A playful browser-based Paper Toss game with wind, physics, and streak scoring."
+    />
+    <meta name="theme-color" content="#f4efe6" />
+    <title>Paper Toss</title>
+  </head>
+  <body>
+    <main class="game-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Office break · 02:47 PM</p>
+          <h1>Paper Toss</h1>
+        </div>
+        <button class="reset-button" id="resetGame" type="button">New game</button>
+      </header>
+
+      <section class="scoreboard" aria-label="Game score">
+        <div class="score-card score-card--primary">
+          <span>Score</span>
+          <strong id="score">0</strong>
+        </div>
+        <div class="score-card">
+          <span>Throws</span>
+          <strong id="throws">0</strong>
+        </div>
+        <div class="score-card">
+          <span>Streak</span>
+          <strong id="streak">0</strong>
+        </div>
+        <div class="score-card score-card--wind">
+          <span>Fan</span>
+          <strong id="wind">Still</strong>
+        </div>
+      </section>
+
+      <section class="game-card" aria-labelledby="gameInstructions">
+        <canvas
+          id="gameCanvas"
+          width="960"
+          height="560"
+          aria-label="Paper Toss game. Drag the paper ball up and toward the bin, then release to throw."
+        ></canvas>
+        <div class="status-panel">
+          <div>
+            <span class="status-dot" aria-hidden="true"></span>
+            <p id="gameStatus" aria-live="polite">Drag the paper toward the bin and release.</p>
+          </div>
+          <p class="level-label">Warm-up · no wind</p>
+        </div>
+      </section>
+
+      <p class="instructions" id="gameInstructions">
+        Start on the paper ball, swipe up and right, then release. A longer swipe makes a stronger throw.
+      </p>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

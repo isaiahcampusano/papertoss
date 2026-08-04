@@ -5,9 +5,15 @@
   "type": "module",
   "description": "A small, deterministic game-logic engine for a Paper Toss clone.",
   "scripts": {
+    "dev": "vite",
+    "build": "npm test && vite build",
+    "preview": "vite preview",
     "test": "node --test"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "vite": "^8.2.0"
   }
 }
