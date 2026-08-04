@@ -17,7 +17,10 @@
           <p class="eyebrow">Office break · 02:47 PM</p>
           <h1>Paper Toss</h1>
         </div>
-        <button class="reset-button" id="resetGame" type="button">New game</button>
+        <div class="topbar-actions">
+          <button class="sound-button" id="toggleSound" type="button" aria-pressed="false">Sound on</button>
+          <button class="reset-button" id="resetGame" type="button">New game</button>
+        </div>
       </header>
 
       <section class="scoreboard" aria-label="Game score">
@@ -33,6 +36,10 @@
           <span>Streak</span>
           <strong id="streak">0</strong>
         </div>
+        <div class="score-card">
+          <span>Best</span>
+          <strong id="bestScore">0</strong>
+        </div>
         <div class="score-card score-card--wind">
           <span>Fan</span>
           <strong id="wind">Still</strong>
@@ -44,6 +51,9 @@
           id="gameCanvas"
           width="960"
           height="560"
+          tabindex="0"
+          role="application"
+          aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Space"
           aria-label="Paper Toss game. Drag the paper ball up and toward the bin, then release to throw."
         ></canvas>
         <div class="status-panel">
@@ -51,15 +61,22 @@
             <span class="status-dot" aria-hidden="true"></span>
             <p id="gameStatus" aria-live="polite">Drag the paper toward the bin and release.</p>
           </div>
-          <p class="level-label">Warm-up · no wind</p>
+          <p class="level-label" id="levelLabel">Level 1 · Warm-up</p>
+        </div>
+        <div class="power-panel" aria-label="Current throw power">
+          <span>Power</span>
+          <div class="power-track"><span id="powerFill"></span></div>
+          <strong id="powerValue">Ready</strong>
         </div>
       </section>
 
       <p class="instructions" id="gameInstructions">
-        Start on the paper ball, swipe up and right, then release. A longer swipe makes a stronger throw.
+        <strong>Touch or mouse:</strong> swipe the paper up and right.
+        <strong>Keyboard:</strong> use arrow keys to aim, then press Space to toss.
       </p>
     </main>
 
+    <noscript>Paper Toss needs JavaScript enabled to run.</noscript>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

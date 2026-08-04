@@ -39,6 +39,12 @@ button {
   margin-bottom: 22px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
 .eyebrow {
   margin: 0 0 7px;
   color: #73685e;
@@ -57,7 +63,8 @@ h1 {
   line-height: 0.95;
 }
 
-.reset-button {
+.reset-button,
+.sound-button {
   min-height: 44px;
   padding: 0 19px;
   border: 1px solid rgba(62, 49, 39, 0.18);
@@ -69,19 +76,26 @@ h1 {
   transition: transform 160ms ease, background 160ms ease;
 }
 
-.reset-button:hover {
+.sound-button {
+  color: #2f776f;
+  border-color: rgba(47, 119, 111, 0.25);
+}
+
+.reset-button:hover,
+.sound-button:hover {
   background: #fff;
   transform: translateY(-1px);
 }
 
-.reset-button:focus-visible {
+.reset-button:focus-visible,
+.sound-button:focus-visible {
   outline: 3px solid rgba(237, 125, 58, 0.42);
   outline-offset: 3px;
 }
 
 .scoreboard {
   display: grid;
-  grid-template-columns: 1.1fr repeat(3, 1fr);
+  grid-template-columns: 1.1fr repeat(4, 1fr);
   gap: 10px;
   margin-bottom: 12px;
 }
@@ -132,6 +146,16 @@ h1 {
   border-radius: 26px;
   background: #f6f1e8;
   box-shadow: 0 24px 70px rgba(69, 47, 30, 0.16);
+  transition: box-shadow 220ms ease, transform 220ms ease;
+}
+
+.game-card[data-feedback="scored"] {
+  box-shadow: 0 24px 78px rgba(47, 119, 111, 0.3);
+  transform: translateY(-2px);
+}
+
+.game-card[data-feedback="missed"] {
+  box-shadow: 0 24px 70px rgba(150, 74, 49, 0.2);
 }
 
 canvas {
@@ -145,6 +169,11 @@ canvas {
 
 canvas:active {
   cursor: grabbing;
+}
+
+canvas:focus-visible {
+  outline: 4px solid rgba(237, 125, 58, 0.72);
+  outline-offset: -4px;
 }
 
 .status-panel {
@@ -177,11 +206,68 @@ canvas:active {
   box-shadow: 0 0 0 5px rgba(237, 125, 58, 0.12);
 }
 
+.game-card[data-feedback="flying"] .status-dot,
+.game-card[data-feedback="aiming"] .status-dot {
+  background: #f3b23d;
+  box-shadow: 0 0 0 5px rgba(243, 178, 61, 0.14);
+}
+
+.game-card[data-feedback="scored"] .status-dot {
+  background: #2f776f;
+  box-shadow: 0 0 0 5px rgba(47, 119, 111, 0.15);
+}
+
+.game-card[data-feedback="missed"] .status-dot {
+  background: #ad5a40;
+  box-shadow: 0 0 0 5px rgba(173, 90, 64, 0.13);
+}
+
 .level-label {
   color: #83766b;
   font-size: 0.78rem;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+}
+
+.power-panel {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) 68px;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 20px 10px;
+  border-top: 1px solid rgba(63, 47, 35, 0.07);
+  background: #f7f2e9;
+}
+
+.power-panel > span {
+  color: #807369;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.power-panel strong {
+  color: #665b52;
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.power-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dfd6ca;
+}
+
+.power-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2f776f, #f3b23d 66%, #ed7d3a);
+  transition: width 80ms linear;
 }
 
 .instructions {
@@ -193,6 +279,10 @@ canvas:active {
   text-align: center;
 }
 
+.instructions strong {
+  color: #40372f;
+}
+
 @media (max-width: 720px) {
   .game-shell {
     width: min(100% - 20px, 620px);
@@ -201,6 +291,10 @@ canvas:active {
 
   .scoreboard {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .score-card--primary {
+    grid-column: span 2;
   }
 
   .score-card {
@@ -219,6 +313,10 @@ canvas:active {
   .level-label {
     display: none;
   }
+
+  .power-panel {
+    padding-inline: 15px;
+  }
 }
 
 @media (max-width: 430px) {
@@ -226,10 +324,24 @@ canvas:active {
     align-items: center;
   }
 
-  .reset-button {
+  .reset-button,
+  .sound-button {
     min-height: 40px;
-    padding: 0 14px;
+    padding: 0 12px;
     font-size: 0.86rem;
+  }
+
+  .sound-button {
+    width: 42px;
+    overflow: hidden;
+    color: transparent;
+  }
+
+  .sound-button::after {
+    content: "♪";
+    display: block;
+    color: #2f776f;
+    font-size: 1rem;
   }
 
   .status-panel {
@@ -239,5 +351,19 @@ canvas:active {
 
   .status-panel p {
     font-size: 0.86rem;
+  }
+
+  .instructions {
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
   }
 }
