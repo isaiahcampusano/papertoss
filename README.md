@@ -1,67 +1,43 @@
 # Paper Toss
 
-A dependency-free JavaScript game-logic engine for a Paper Toss clone. It
-models launch velocity, gravity, fan wind, target collision, scoring, misses,
-streaks, and difficulty changes without depending on a rendering framework.
+A responsive browser game with deterministic throw physics, changing fan wind,
+five difficulty levels, streak scoring, sound, and a device-local high score.
 
-## Requirements
+**Play:** https://isaiahcampusano.github.io/papertoss/
 
-- Node.js 20 or newer
+## Controls
 
-## Run the tests
+- Touch or mouse: start on the paper ball, swipe up and right, then release.
+- Keyboard: focus the game, use the arrow keys to adjust aim and power, then
+  press Space to toss.
+
+Every two made shots advances the difficulty. The fan indicator and animated
+airflow show the current wind direction and strength.
+
+## Development
+
+Requires Node.js 20.19+ or 22.12+.
 
 ```sh
-npm test
+npm install
+npm run dev
 ```
 
-## Use the engine
+Use `npm test` for the engine and interaction tests, and `npm run build` for the
+same production build deployed to GitHub Pages.
 
-```js
-import { PaperTossGame } from "./src/game/PaperTossGame.js";
+## Project structure
 
-const game = new PaperTossGame({
-  canDistance: 1,
-  canWidth: 0.24,
-  canYOffset: 0,
-  windSpeed: 0.8,
-});
-
-// Angle is in radians and power is the initial speed in metres per second.
-game.launch(Math.PI / 4, 3.2);
-
-function tick(deltaSeconds) {
-  const result = game.update(deltaSeconds);
-
-  // Render with result.ball.x and result.ball.y.
-  if (result.landed) {
-    console.log(result.scored ? "Made it!" : "Missed", game.getStats());
-  }
-}
-```
+- `src/game/PaperTossGame.js` — launch physics, collision, score, and statistics
+- `src/game/levels.js` — difficulty presets
+- `src/game/progression.js` — score-to-level progression
+- `src/ui/input.js` — pointer-swipe conversion
+- `src/main.js` — Canvas rendering, controls, sound, and session behavior
 
 Coordinates follow the screen convention: positive `x` is right and positive
-`y` is down. `windSpeed` is therefore horizontal acceleration in m/s², not a
-literal air speed. Positive values push right; negative values push left.
+`y` is down. `windSpeed` is horizontal acceleration in m/s². Small internal
+simulation steps prevent fast throws from skipping through the bin.
 
-## API
-
-- `launch(angleRad, power)` starts a throw and returns `false` if one is active.
-- `update(dt)` advances physics and returns `{ landed, scored, reason, ball }`.
-- `setDifficulty(settings)` changes the bin or wind between throws.
-- `getState()` returns a render-friendly snapshot of the game.
-- `getStats()` returns score, throws, misses, accuracy, and streak data.
-- `resetBall()` readies the ball while preserving stats.
-- `resetGame()` clears the full session.
-
-Difficulty presets are exported from `src/game/levels.js`.
-
-## Integration notes
-
-Call `launch` when the player releases a swipe, converting the swipe direction
-to an angle and its length or speed to power. Call `update` from the frontend's
-animation loop using elapsed seconds. The engine uses small internal simulation
-steps, so a slow visual frame will not let the ball skip through the bin.
-
-This is the local game-logic layer described in the handoff. A network backend
-for accounts, leaderboards, saved progress, or server-side throw validation is
-not included yet.
+GitHub Actions tests and builds every update to `main`, then deploys the Vite
+output to GitHub Pages. Online accounts and shared leaderboards are outside the
+static-site scope and would require a separate network service.
