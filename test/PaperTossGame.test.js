@@ -12,17 +12,29 @@ const runUntilLanded = (game, limit = 5) => {
   throw new Error("The throw did not land within the test limit");
 };
 
+const runUntilLandedWithRimEvent = (game, limit = 5) => {
+  const dt = 1 / 120;
+  let rimHit = false;
+  for (let elapsed = 0; elapsed < limit; elapsed += dt) {
+    const result = game.update(dt);
+    rimHit ||= result.rimHit;
+    if (result.landed) return { ...result, rimHit };
+  }
+  throw new Error("The rim throw did not land within the test limit");
+};
+
 test("launch converts angle and power into screen-space velocity", () => {
   const game = new PaperTossGame();
 
-  assert.equal(game.launch(Math.PI / 4, 10), true);
+  assert.equal(game.launch(Math.PI / 4, 10, -0.5), true);
   assert.ok(Math.abs(game.ball.vx - Math.SQRT1_2 * 10) < 1e-12);
   assert.ok(Math.abs(game.ball.vy + Math.SQRT1_2 * 10) < 1e-12);
+  assert.equal(game.ball.vz, -0.5);
   assert.equal(game.getStats().throws, 1);
   assert.equal(game.launch(Math.PI / 4, 10), false);
 });
 
-test("constant acceleration produces deterministic motion", () => {
+test("gravity and lateral wind produce deterministic motion", () => {
   const game = new PaperTossGame({
     canYOffset: 10,
     canHeight: 10,
@@ -30,13 +42,15 @@ test("constant acceleration produces deterministic motion", () => {
     gravity: 10,
   });
 
-  game.launch(0, 4);
+  game.launch(0, 4, 3);
   const result = game.update(0.5);
 
-  assert.ok(Math.abs(result.ball.x - 2.25) < 1e-10);
+  assert.ok(Math.abs(result.ball.x - 2) < 1e-10);
   assert.ok(Math.abs(result.ball.y - 1.25) < 1e-10);
-  assert.ok(Math.abs(result.ball.vx - 5) < 1e-10);
+  assert.ok(Math.abs(result.ball.z - 1.75) < 1e-10);
+  assert.ok(Math.abs(result.ball.vx - 4) < 1e-10);
   assert.ok(Math.abs(result.ball.vy - 5) < 1e-10);
+  assert.ok(Math.abs(result.ball.vz - 4) < 1e-10);
 });
 
 test("a centered descending throw scores", () => {
@@ -107,10 +121,95 @@ test("difficulty can change between throws but not during one", () => {
 test("invalid configuration and simulation input fail early", () => {
   assert.throws(
     () => new PaperTossGame({ canWidth: 0.05, ballRadius: 0.03 }),
-    /wider than the ball diameter/,
+    /canWidth and canDepth/,
   );
 
   const game = new PaperTossGame();
   assert.throws(() => game.launch(0.5, 0), /greater than zero/);
   assert.throws(() => game.update(-0.1), /cannot be negative/);
+});
+
+test("a glancing rim hit reflects the ball instead of ending the throw", () => {
+  const game = new PaperTossGame({
+    canDistance: 1,
+    canWidth: 0.3,
+    canDepth: 0.24,
+    ballRadius: 0.02,
+    rimRadius: 0.01,
+    gravity: 0.01,
+  });
+
+  game.ball = {
+    x: 0.84,
+    y: -0.035,
+    z: 0,
+    vx: 1,
+    vy: 0.8,
+    vz: 0,
+    elapsed: 0,
+  };
+  game.ballInFlight = true;
+
+  const result = game.update(0.08);
+
+  assert.equal(result.rimHit, true);
+  assert.equal(result.landed, false);
+  assert.equal(game.ballInFlight, true);
+  assert.ok(result.ball.vx < 0 || result.ball.vy < 0);
+});
+
+test("a rim deflection can redirect the ball into the bin", () => {
+  const game = new PaperTossGame({
+    canDistance: 1,
+    canWidth: 0.3,
+    canDepth: 0.24,
+    ballRadius: 0.02,
+    rimRadius: 0.01,
+    gravity: 0.6,
+  });
+
+  game.ball = {
+    x: 0.84,
+    y: -0.05,
+    z: -0.03,
+    vx: 1,
+    vy: 0.4,
+    vz: 0,
+    elapsed: 0,
+  };
+  game.ballInFlight = true;
+
+  const result = runUntilLandedWithRimEvent(game, 3);
+
+  assert.equal(result.rimHit, true);
+  assert.equal(result.scored, true);
+  assert.equal(result.reason, "bin");
+});
+
+test("a rim deflection can also knock the ball out", () => {
+  const game = new PaperTossGame({
+    canDistance: 1,
+    canWidth: 0.3,
+    canDepth: 0.24,
+    ballRadius: 0.02,
+    rimRadius: 0.01,
+    gravity: 0.6,
+  });
+
+  game.ball = {
+    x: 0.82,
+    y: -0.05,
+    z: -0.12,
+    vx: 0.4,
+    vy: 0.4,
+    vz: 0.5,
+    elapsed: 0,
+  };
+  game.ballInFlight = true;
+
+  const result = runUntilLandedWithRimEvent(game, 3);
+
+  assert.equal(result.rimHit, true);
+  assert.equal(result.scored, false);
+  assert.equal(result.reason, "floor");
 });

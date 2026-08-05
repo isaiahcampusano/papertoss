@@ -43,14 +43,29 @@ function writeStorage(key, value) {
 const game = new PaperTossGame({
   ...LEVELS[0],
   canWidth: 0.28,
+  canDepth: 0.21,
   canHeight: 0.42,
   ballRadius: 0.028,
   maxFlightTime: 5,
 });
 
-const view = { width: 960, height: 560, scale: 1, originX: 0, originY: 0 };
+const view = {
+  width: 960,
+  height: 560,
+  originX: 0,
+  originY: 0,
+  targetX: 0,
+  targetY: 0,
+  verticalScale: 1,
+  lateralScale: 1,
+};
 const drag = { active: false, pointerId: null, startX: 0, startY: 0, x: 0, y: 0 };
-const keyboardAim = { active: false, angleRad: Math.PI / 4, power: Math.sqrt(game.gravity * game.canDistance) };
+const keyboardAim = {
+  active: false,
+  angleRad: Math.PI / 4,
+  power: Math.sqrt(game.gravity * game.canDistance),
+  lateralSpeed: 0,
+};
 const particles = [];
 
 let currentLevelIndex = 0;
@@ -58,6 +73,7 @@ let highScore = Number.parseInt(readStorage(storageKeys.highScore, "0"), 10) || 
 let muted = readStorage(storageKeys.muted, "false") === "true";
 let audioContext;
 let feedbackTimer;
+let rimFlash = 0;
 
 function resizeCanvas() {
   const bounds = canvas.getBoundingClientRect();
@@ -68,15 +84,21 @@ function resizeCanvas() {
 
   view.width = bounds.width;
   view.height = bounds.height;
-  view.originX = bounds.width * 0.09;
-  view.originY = bounds.height * 0.69;
-  view.scale = (bounds.width * 0.76) / Math.max(1.25, game.canDistance + 0.25);
+  view.originX = bounds.width * 0.5;
+  view.originY = bounds.height * 0.86;
+  view.targetX = bounds.width * 0.5;
+  view.targetY = bounds.height * 0.58;
+  view.verticalScale = bounds.height * 0.72;
+  view.lateralScale = Math.min(bounds.width * 0.58, 520) / Math.max(1, game.canDistance);
 }
 
 function toScreen(ball = game.ball) {
+  const progress = clamp(ball.x / game.canDistance, 0, 1.4);
+  const perspective = 1.18 - clamp(progress, 0, 1) * 0.18;
   return {
-    x: view.originX + ball.x * view.scale,
-    y: view.originY + ball.y * view.scale,
+    x: view.originX + (ball.z ?? 0) * view.lateralScale * perspective,
+    y: view.originY + (view.targetY - view.originY) * progress + ball.y * view.verticalScale,
+    progress,
   };
 }
 
@@ -166,10 +188,15 @@ function playResultSound(scored) {
   }
 }
 
+function playRimSound() {
+  playTone(920, 0.065, { type: "square", volume: 0.018, endFrequency: 610 });
+}
+
 function applyLevel(index) {
   currentLevelIndex = index;
   game.setDifficulty(LEVELS[index]);
   keyboardAim.power = clamp(Math.sqrt(game.gravity * game.canDistance), 1.8, 5.4);
+  keyboardAim.lateralSpeed = 0;
   resizeCanvas();
   updateScoreboard();
 }
@@ -180,20 +207,36 @@ function roundedRectangle(ctx, x, y, width, height, radius) {
 }
 
 function drawRoom(now) {
-  const gradient = context.createLinearGradient(0, 0, 0, view.height);
-  gradient.addColorStop(0, "#faf6ee");
-  gradient.addColorStop(0.68, "#eee5d7");
-  gradient.addColorStop(0.68, "#ba7d4d");
-  gradient.addColorStop(1, "#744226");
-  context.fillStyle = gradient;
+  const wall = context.createLinearGradient(0, 0, 0, view.height * 0.58);
+  wall.addColorStop(0, "#faf7f0");
+  wall.addColorStop(1, "#e7ddd0");
+  context.fillStyle = wall;
   context.fillRect(0, 0, view.width, view.height);
 
   context.fillStyle = "rgba(101, 73, 48, 0.08)";
-  for (let y = 42; y < view.height * 0.65; y += 56) context.fillRect(0, y, view.width, 1);
+  for (let y = 42; y < view.height * 0.54; y += 56) context.fillRect(0, y, view.width, 1);
+
+  const floorY = view.height * 0.54;
+  const floor = context.createLinearGradient(0, floorY, 0, view.height);
+  floor.addColorStop(0, "#b98255");
+  floor.addColorStop(1, "#6d3d24");
+  context.fillStyle = floor;
+  context.fillRect(0, floorY, view.width, view.height - floorY);
+
+  context.strokeStyle = "rgba(75, 42, 24, 0.18)";
+  context.lineWidth = 1;
+  for (let offset = -3; offset <= 3; offset += 1) {
+    context.beginPath();
+    context.moveTo(view.targetX + offset * view.width * 0.055, floorY);
+    context.lineTo(view.targetX + offset * view.width * 0.22, view.height);
+    context.stroke();
+  }
+  context.fillStyle = "rgba(54, 34, 22, 0.18)";
+  context.fillRect(0, floorY - 4, view.width, 7);
 
   const windowWidth = view.width * 0.19;
   const windowHeight = view.height * 0.25;
-  const windowX = view.width * 0.73;
+  const windowX = view.width * 0.74;
   const windowY = view.height * 0.11;
   context.fillStyle = "#fffdf7";
   context.fillRect(windowX - 6, windowY - 6, windowWidth + 12, windowHeight + 12);
@@ -206,26 +249,24 @@ function drawRoom(now) {
   context.fillRect(windowX + windowWidth * 0.48, windowY, 5, windowHeight);
   context.fillRect(windowX, windowY + windowHeight * 0.48, windowWidth, 5);
 
-  context.fillStyle = "#f0cf67";
+  context.fillStyle = "#f2cf68";
   context.save();
-  context.translate(view.width * 0.14, view.height * 0.18);
+  context.translate(view.width * 0.16, view.height * 0.2);
   context.rotate(-0.035);
-  context.fillRect(-38, -28, 76, 56);
+  context.fillRect(-46, -32, 92, 64);
   context.fillStyle = "rgba(77, 62, 42, 0.42)";
-  context.fillRect(-25, -10, 47, 3);
-  context.fillRect(-25, 2, 35, 3);
+  context.fillRect(-29, -11, 54, 3);
+  context.fillRect(-29, 3, 41, 3);
   context.restore();
 
-  context.fillStyle = "rgba(54, 34, 22, 0.16)";
-  context.fillRect(0, view.height * 0.68, view.width, 5);
   drawFan(now);
 }
 
 function drawFan(now) {
   const speed = Math.max(0.7, Math.abs(game.windSpeed) * 1.5);
   const rotation = reduceMotion ? 0 : (now / 1000) * speed;
-  const fanX = view.width * 0.47;
-  const fanY = view.originY - 57;
+  const fanX = view.width * (game.windSpeed < 0 ? 0.72 : 0.28);
+  const fanY = view.targetY - view.height * 0.055;
 
   context.save();
   context.translate(fanX, fanY);
@@ -261,7 +302,7 @@ function drawFan(now) {
 
 function drawWind(now, fanX, fanY) {
   const direction = Math.sign(game.windSpeed);
-  const span = view.width * 0.16;
+  const span = view.width * 0.28;
   context.save();
   context.strokeStyle = "rgba(47, 119, 111, 0.34)";
   context.lineWidth = 2;
@@ -277,15 +318,16 @@ function drawWind(now, fanX, fanY) {
 }
 
 function drawBin() {
-  const centerX = view.originX + game.canDistance * view.scale;
-  const openingY = view.originY + game.canYOffset * view.scale;
-  const openingWidth = game.canWidth * view.scale;
-  const bodyHeight = Math.min(game.canHeight * view.scale, view.height * 0.26);
+  const centerX = view.targetX;
+  const openingY = view.targetY + game.canYOffset * view.verticalScale;
+  const openingWidth = game.canWidth * view.lateralScale;
+  const openingDepth = Math.max(18, game.canDepth * view.lateralScale * 0.34);
+  const bodyHeight = Math.min(game.canHeight * view.verticalScale * 0.58, view.height * 0.23);
 
   context.save();
   context.fillStyle = "rgba(40, 30, 24, 0.22)";
   context.beginPath();
-  context.ellipse(centerX + 12, openingY + bodyHeight + 7, openingWidth * 0.72, 12, 0, 0, Math.PI * 2);
+  context.ellipse(centerX + 12, openingY + bodyHeight + 9, openingWidth * 0.52, 11, 0, 0, Math.PI * 2);
   context.fill();
 
   const metal = context.createLinearGradient(centerX - openingWidth / 2, 0, centerX + openingWidth / 2, 0);
@@ -294,8 +336,8 @@ function drawBin() {
   metal.addColorStop(1, "#626d6f");
   context.fillStyle = metal;
   context.beginPath();
-  context.moveTo(centerX - openingWidth * 0.48, openingY + 2);
-  context.lineTo(centerX + openingWidth * 0.48, openingY + 2);
+  context.moveTo(centerX - openingWidth * 0.48, openingY + openingDepth * 0.08);
+  context.lineTo(centerX + openingWidth * 0.48, openingY + openingDepth * 0.08);
   context.lineTo(centerX + openingWidth * 0.37, openingY + bodyHeight);
   context.lineTo(centerX - openingWidth * 0.37, openingY + bodyHeight);
   context.closePath();
@@ -305,29 +347,34 @@ function drawBin() {
   context.lineWidth = 1;
   for (let offset = -0.22; offset <= 0.22; offset += 0.11) {
     context.beginPath();
-    context.moveTo(centerX + openingWidth * offset, openingY + 9);
+    context.moveTo(centerX + openingWidth * offset, openingY + openingDepth * 0.42);
     context.lineTo(centerX + openingWidth * offset * 0.74, openingY + bodyHeight - 8);
     context.stroke();
   }
 
   context.fillStyle = "#283234";
   context.beginPath();
-  context.ellipse(centerX, openingY, openingWidth / 2, Math.max(8, openingWidth * 0.12), 0, 0, Math.PI * 2);
+  context.ellipse(centerX, openingY, openingWidth / 2, openingDepth / 2, 0, 0, Math.PI * 2);
   context.fill();
-  context.strokeStyle = "#c5cdcd";
-  context.lineWidth = 5;
+  context.strokeStyle = rimFlash > 0 ? "#f3b23d" : "#c5cdcd";
+  context.lineWidth = rimFlash > 0 ? 7 : 5;
+  context.stroke();
+  context.strokeStyle = "rgba(255, 255, 255, 0.38)";
+  context.lineWidth = 1.5;
+  context.beginPath();
+  context.ellipse(centerX, openingY - 1, openingWidth * 0.46, openingDepth * 0.38, 0, Math.PI, Math.PI * 2);
   context.stroke();
   context.restore();
 }
 
 function drawPaper(ball = game.ball) {
   const position = toScreen(ball);
-  const radius = Math.max(12, game.ballRadius * view.scale);
+  const radius = 20 - clamp(position.progress, 0, 1) * 9;
 
   context.save();
   context.translate(position.x, position.y);
   context.rotate(reduceMotion ? 0 : ball.elapsed * 7);
-  context.fillStyle = "rgba(31, 25, 21, 0.18)";
+  context.fillStyle = `rgba(31, 25, 21, ${clamp(0.18 + ball.y * 0.2, 0.07, 0.22)})`;
   context.beginPath();
   context.ellipse(5, radius + 9, radius * 0.9, radius * 0.36, 0, 0, Math.PI * 2);
   context.fill();
@@ -361,30 +408,6 @@ function drawPaper(ball = game.ball) {
   context.restore();
 }
 
-function drawTrajectory(launch) {
-  if (!launch) return;
-  const vx = Math.cos(launch.angleRad) * launch.power;
-  const vy = -Math.sin(launch.angleRad) * launch.power;
-
-  context.save();
-  for (let step = 1; step <= 34; step += 1) {
-    const time = step * 0.035;
-    const ball = {
-      x: vx * time + 0.5 * game.windSpeed * time ** 2,
-      y: vy * time + 0.5 * game.gravity * time ** 2,
-    };
-    if (time > 0.2 && ball.y > game.canYOffset + 0.08) break;
-    const point = toScreen(ball);
-    if (point.x > view.width || point.y < 0) break;
-    context.globalAlpha = clamp(0.7 - step * 0.018, 0.16, 0.7);
-    context.fillStyle = "#ed7d3a";
-    context.beginPath();
-    context.arc(point.x, point.y, Math.max(1.5, 3.5 - step * 0.06), 0, Math.PI * 2);
-    context.fill();
-  }
-  context.restore();
-}
-
 function activeAim() {
   if (drag.active) {
     return swipeToLaunch({
@@ -399,28 +422,31 @@ function activeAim() {
 
 function drawAim() {
   const launch = activeAim();
-  drawTrajectory(launch);
-  if (!drag.active) return;
+  if (!launch) return;
+  const paper = toScreen();
+  const aimPoint = drag.active
+    ? { x: drag.x, y: drag.y }
+    : { x: paper.x + launch.lateralSpeed * 28, y: paper.y - 38 };
 
   context.save();
   context.setLineDash([8, 9]);
-  context.strokeStyle = launch ? "#ed7d3a" : "rgba(80, 69, 59, 0.38)";
+  context.strokeStyle = "#ed7d3a";
   context.lineWidth = 3;
   context.beginPath();
-  context.moveTo(drag.startX, drag.startY);
-  context.lineTo(drag.x, drag.y);
+  context.moveTo(paper.x, paper.y);
+  context.lineTo(aimPoint.x, aimPoint.y);
   context.stroke();
   context.setLineDash([]);
-  context.fillStyle = launch ? "#ed7d3a" : "#7c746b";
+  context.fillStyle = "#ed7d3a";
   context.beginPath();
-  context.arc(drag.x, drag.y, 6, 0, Math.PI * 2);
+  context.arc(aimPoint.x, aimPoint.y, 6, 0, Math.PI * 2);
   context.fill();
   context.restore();
 }
 
 function spawnCelebration() {
   if (reduceMotion) return;
-  const target = toScreen({ x: game.canDistance, y: game.canYOffset });
+  const target = toScreen({ x: game.canDistance, y: game.canYOffset, z: 0 });
   const colors = ["#ed7d3a", "#f3b23d", "#2f776f", "#fffdf8"];
   for (let index = 0; index < 38; index += 1) {
     particles.push({
@@ -466,7 +492,7 @@ function draw(now) {
 
 function launchShot(launch) {
   if (!launch || game.ballInFlight) return;
-  game.launch(launch.angleRad, launch.power);
+  game.launch(launch.angleRad, launch.power, launch.lateralSpeed);
   keyboardAim.active = false;
   updatePower(null);
   updateScoreboard();
@@ -529,7 +555,7 @@ function finishDrag(event) {
 
   if (!launch) {
     updatePower(null);
-    setStatus("Try a longer swipe toward the bin.", "missed");
+    setStatus("Try a longer upward flick.", "missed");
     return;
   }
   launchShot(launch);
@@ -539,7 +565,7 @@ canvas.addEventListener("pointerup", finishDrag);
 canvas.addEventListener("pointercancel", () => {
   drag.active = false;
   updatePower(null);
-  setStatus("Drag the paper toward the bin and release.");
+  setStatus("Flick the paper upward and release.");
 });
 
 canvas.addEventListener("focus", () => {
@@ -561,14 +587,14 @@ canvas.addEventListener("keydown", (event) => {
   event.preventDefault();
   keyboardAim.active = true;
 
-  if (event.key === "ArrowLeft") keyboardAim.angleRad = clamp(keyboardAim.angleRad + 0.05, 0.12, 1.45);
-  if (event.key === "ArrowRight") keyboardAim.angleRad = clamp(keyboardAim.angleRad - 0.05, 0.12, 1.45);
+  if (event.key === "ArrowLeft") keyboardAim.lateralSpeed = clamp(keyboardAim.lateralSpeed - 0.08, -1.35, 1.35);
+  if (event.key === "ArrowRight") keyboardAim.lateralSpeed = clamp(keyboardAim.lateralSpeed + 0.08, -1.35, 1.35);
   if (event.key === "ArrowUp") keyboardAim.power = clamp(keyboardAim.power + 0.15, 1.8, 5.4);
   if (event.key === "ArrowDown") keyboardAim.power = clamp(keyboardAim.power - 0.15, 1.8, 5.4);
   if (event.key === " ") launchShot(keyboardAim);
   else {
     updatePower(keyboardAim);
-    setStatus("Aim with arrows. Press Space to toss.", "aiming");
+    setStatus("Steer with arrows. Press Space to toss.", "aiming");
   }
 });
 
@@ -600,9 +626,15 @@ function frame(now) {
 
   if (game.ballInFlight) {
     const result = game.update(dt);
+    if (result.rimHit) {
+      rimFlash = 0.14;
+      playRimSound();
+      setStatus("Off the rim…", "flying");
+    }
     if (result.landed) finishThrow(result);
   }
 
+  rimFlash = Math.max(0, rimFlash - dt);
   updateParticles(dt);
   draw(now);
   requestAnimationFrame(frame);
