@@ -25,12 +25,17 @@ const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").match
 const storageKeys = { highScore: "paper-toss-high-score", muted: "paper-toss-muted" };
 const CAMERA_TILT = Object.freeze({
   referenceWidth: 760,
-  minimumStrength: 0.62,
-  originOffset: 0.012,
-  targetOffset: 0.035,
-  vanishingPointOffset: 0.07,
-  horizonSlope: 0.006,
-  rimYaw: 0.035,
+  minimumStrength: 0.78,
+  originOffset: 0.045,
+  targetOffset: 0.065,
+  vanishingPointOffset: 0.045,
+  horizonCenter: 0.44,
+  horizonSlope: 0.005,
+  targetFloorDepth: 0.135,
+  rimYaw: -0.028,
+  nearPerspective: 1.5,
+  lateralWidth: 0.78,
+  maximumLateralScale: 380,
 });
 
 function readStorage(key, fallback) {
@@ -105,18 +110,22 @@ function resizeCanvas() {
     CAMERA_TILT.minimumStrength,
     1,
   );
-  view.originX = bounds.width * (0.5 - CAMERA_TILT.originOffset * view.tiltStrength);
-  view.originY = bounds.height * 0.86;
-  view.targetX = bounds.width * (0.5 + CAMERA_TILT.targetOffset * view.tiltStrength);
-  view.vanishingX = bounds.width * (0.5 + CAMERA_TILT.vanishingPointOffset * view.tiltStrength);
-  view.horizonLeftY = bounds.height * (0.54 - CAMERA_TILT.horizonSlope * view.tiltStrength);
-  view.horizonRightY = bounds.height * (0.54 + CAMERA_TILT.horizonSlope * view.tiltStrength);
+  view.originX = bounds.width * (0.5 + CAMERA_TILT.originOffset * view.tiltStrength);
+  view.originY = bounds.height * 0.9;
+  view.targetX = bounds.width * (0.5 - CAMERA_TILT.targetOffset * view.tiltStrength);
+  view.vanishingX = bounds.width * (0.5 - CAMERA_TILT.vanishingPointOffset * view.tiltStrength);
+  view.horizonLeftY =
+    bounds.height * (CAMERA_TILT.horizonCenter - CAMERA_TILT.horizonSlope * view.tiltStrength);
+  view.horizonRightY =
+    bounds.height * (CAMERA_TILT.horizonCenter + CAMERA_TILT.horizonSlope * view.tiltStrength);
   view.rollSlope = (view.horizonRightY - view.horizonLeftY) / bounds.width;
   view.rollRadians = Math.atan(view.rollSlope);
   view.rimRotation = view.rollRadians + CAMERA_TILT.rimYaw * view.tiltStrength;
-  view.targetY = horizonYAt(view.targetX) + bounds.height * 0.04;
-  view.verticalScale = bounds.height * 0.72;
-  view.lateralScale = Math.min(bounds.width * 0.58, 520) / Math.max(1, game.canDistance);
+  view.targetY = horizonYAt(view.targetX) + bounds.height * CAMERA_TILT.targetFloorDepth;
+  view.verticalScale = bounds.height * 0.78;
+  view.lateralScale =
+    Math.min(bounds.width * CAMERA_TILT.lateralWidth, CAMERA_TILT.maximumLateralScale) /
+    Math.max(1, game.canDistance);
 }
 
 function horizonYAt(x) {
@@ -125,7 +134,9 @@ function horizonYAt(x) {
 
 function toScreen(ball = game.ball) {
   const progress = clamp(ball.x / game.canDistance, 0, 1.4);
-  const perspective = 1.18 - clamp(progress, 0, 1) * 0.18;
+  const perspective =
+    CAMERA_TILT.nearPerspective -
+    clamp(progress, 0, 1) * (CAMERA_TILT.nearPerspective - 1);
   const centerX = view.originX + (view.targetX - view.originX) * progress;
   const x = centerX + (ball.z ?? 0) * view.lateralScale * perspective;
   return {
@@ -282,6 +293,17 @@ function drawRoom(now) {
     context.stroke();
   }
 
+  context.strokeStyle = "rgba(75, 42, 24, 0.1)";
+  for (const depth of [0.28, 0.52, 0.76]) {
+    const easedDepth = depth ** 1.65;
+    const leftY = view.horizonLeftY + (view.height - view.horizonLeftY) * easedDepth;
+    const rightY = view.horizonRightY + (view.height - view.horizonRightY) * easedDepth;
+    context.beginPath();
+    context.moveTo(0, leftY);
+    context.lineTo(view.width, rightY);
+    context.stroke();
+  }
+
   context.fillStyle = "rgba(54, 34, 22, 0.18)";
   context.beginPath();
   context.moveTo(0, view.horizonLeftY - 4);
@@ -290,6 +312,24 @@ function drawRoom(now) {
   context.lineTo(0, view.horizonLeftY + 3);
   context.closePath();
   context.fill();
+
+  const deskTopY = view.height * 0.845;
+  const desk = context.createLinearGradient(0, deskTopY, 0, view.height);
+  desk.addColorStop(0, "#e8a74a");
+  desk.addColorStop(1, "#ad642f");
+  context.fillStyle = desk;
+  context.beginPath();
+  context.moveTo(view.originX - view.width * 0.085, deskTopY);
+  context.lineTo(view.originX + view.width * 0.075, deskTopY + view.height * 0.006);
+  context.lineTo(view.originX + view.width * 0.18, view.height);
+  context.lineTo(view.originX - view.width * 0.19, view.height);
+  context.closePath();
+  context.fill();
+  context.strokeStyle = "rgba(102, 55, 28, 0.3)";
+  context.beginPath();
+  context.moveTo(view.originX - view.width * 0.085, deskTopY);
+  context.lineTo(view.originX + view.width * 0.075, deskTopY + view.height * 0.006);
+  context.stroke();
 
   const windowWidth = view.width * 0.19;
   const windowHeight = view.height * 0.25;
@@ -326,12 +366,14 @@ function drawRoom(now) {
 function drawFan(now) {
   const speed = Math.max(0.7, Math.abs(game.windSpeed) * 1.5);
   const rotation = reduceMotion ? 0 : (now / 1000) * speed;
-  const fanX = view.width * (game.windSpeed < 0 ? 0.73 : 0.29);
-  const fanY = horizonYAt(fanX) - view.height * 0.015;
+  const fanScale = 1.18 + view.tiltStrength * 0.12;
+  const fanX = view.width * (game.windSpeed < 0 ? 0.81 : 0.18);
+  const fanY = view.height * 0.67 + (fanX - view.width / 2) * view.rollSlope;
 
   context.save();
   context.translate(fanX, fanY);
   context.rotate(view.rollRadians);
+  context.scale(fanScale, fanScale);
   context.fillStyle = "#615c57";
   context.fillRect(-5, 28, 10, 54);
   context.fillStyle = "#44413e";
@@ -359,20 +401,20 @@ function drawFan(now) {
   context.fill();
   context.restore();
 
-  if (game.windSpeed !== 0) drawWind(now, fanX, fanY);
+  if (game.windSpeed !== 0) drawWind(now, fanX, fanY, fanScale);
 }
 
-function drawWind(now, fanX, fanY) {
+function drawWind(now, fanX, fanY, fanScale) {
   const direction = Math.sign(game.windSpeed);
-  const span = view.width * 0.28;
+  const span = view.width * 0.42;
   context.save();
   context.strokeStyle = "rgba(47, 119, 111, 0.34)";
   context.lineWidth = 2;
   context.setLineDash([12, 12]);
   context.lineDashOffset = reduceMotion ? 0 : (-now / 22) * direction;
   for (let index = -1; index <= 1; index += 1) {
-    const startX = fanX + direction * 42;
-    const endX = fanX + direction * (42 + span);
+    const startX = fanX + direction * 42 * fanScale;
+    const endX = fanX + direction * (42 * fanScale + span);
     context.beginPath();
     context.moveTo(startX, fanY + index * 15);
     context.lineTo(endX, fanY + index * 15 + (endX - startX) * view.rollSlope);
@@ -478,7 +520,7 @@ function drawBin() {
 
 function drawPaper(ball = game.ball) {
   const position = toScreen(ball);
-  const radius = 20 - clamp(position.progress, 0, 1) * 9;
+  const radius = 28 - clamp(position.progress, 0, 1) * 18;
 
   context.save();
   context.translate(position.x, position.y);
@@ -541,9 +583,13 @@ function drawAim() {
   const launch = activeAim();
   if (!launch) return;
   const paper = toScreen();
-  const aimPoint = drag.active
-    ? { x: drag.x, y: drag.y }
-    : { x: paper.x + launch.lateralSpeed * 28, y: paper.y - 38 };
+  const cueRise = drag.active ? clamp(drag.startY - drag.y, 30, 120) : 52;
+  const cameraRise = Math.max(1, view.originY - view.targetY);
+  const cameraRun = view.targetX - view.originX;
+  const aimPoint = {
+    x: paper.x + (cameraRun / cameraRise) * cueRise + launch.lateralSpeed * 20,
+    y: paper.y - cueRise,
+  };
 
   context.save();
   context.setLineDash([8, 9]);
