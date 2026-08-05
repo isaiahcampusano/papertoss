@@ -23,6 +23,15 @@ const soundButton = document.querySelector("#toggleSound");
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const storageKeys = { highScore: "paper-toss-high-score", muted: "paper-toss-muted" };
+const CAMERA_TILT = Object.freeze({
+  referenceWidth: 760,
+  minimumStrength: 0.62,
+  originOffset: 0.012,
+  targetOffset: 0.035,
+  vanishingPointOffset: 0.07,
+  horizonSlope: 0.006,
+  rimYaw: 0.035,
+});
 
 function readStorage(key, fallback) {
   try {
@@ -56,6 +65,13 @@ const view = {
   originY: 0,
   targetX: 0,
   targetY: 0,
+  vanishingX: 0,
+  horizonLeftY: 0,
+  horizonRightY: 0,
+  rollSlope: 0,
+  rollRadians: 0,
+  rimRotation: 0,
+  tiltStrength: 1,
   verticalScale: 1,
   lateralScale: 1,
 };
@@ -84,20 +100,41 @@ function resizeCanvas() {
 
   view.width = bounds.width;
   view.height = bounds.height;
-  view.originX = bounds.width * 0.5;
+  view.tiltStrength = clamp(
+    bounds.width / CAMERA_TILT.referenceWidth,
+    CAMERA_TILT.minimumStrength,
+    1,
+  );
+  view.originX = bounds.width * (0.5 - CAMERA_TILT.originOffset * view.tiltStrength);
   view.originY = bounds.height * 0.86;
-  view.targetX = bounds.width * 0.5;
-  view.targetY = bounds.height * 0.58;
+  view.targetX = bounds.width * (0.5 + CAMERA_TILT.targetOffset * view.tiltStrength);
+  view.vanishingX = bounds.width * (0.5 + CAMERA_TILT.vanishingPointOffset * view.tiltStrength);
+  view.horizonLeftY = bounds.height * (0.54 - CAMERA_TILT.horizonSlope * view.tiltStrength);
+  view.horizonRightY = bounds.height * (0.54 + CAMERA_TILT.horizonSlope * view.tiltStrength);
+  view.rollSlope = (view.horizonRightY - view.horizonLeftY) / bounds.width;
+  view.rollRadians = Math.atan(view.rollSlope);
+  view.rimRotation = view.rollRadians + CAMERA_TILT.rimYaw * view.tiltStrength;
+  view.targetY = horizonYAt(view.targetX) + bounds.height * 0.04;
   view.verticalScale = bounds.height * 0.72;
   view.lateralScale = Math.min(bounds.width * 0.58, 520) / Math.max(1, game.canDistance);
+}
+
+function horizonYAt(x) {
+  return view.horizonLeftY + x * view.rollSlope;
 }
 
 function toScreen(ball = game.ball) {
   const progress = clamp(ball.x / game.canDistance, 0, 1.4);
   const perspective = 1.18 - clamp(progress, 0, 1) * 0.18;
+  const centerX = view.originX + (view.targetX - view.originX) * progress;
+  const x = centerX + (ball.z ?? 0) * view.lateralScale * perspective;
   return {
-    x: view.originX + (ball.z ?? 0) * view.lateralScale * perspective,
-    y: view.originY + (view.targetY - view.originY) * progress + ball.y * view.verticalScale,
+    x,
+    y:
+      view.originY +
+      (view.targetY - view.originY) * progress +
+      ball.y * view.verticalScale +
+      (x - centerX) * view.rollSlope,
     progress,
   };
 }
@@ -207,52 +244,76 @@ function roundedRectangle(ctx, x, y, width, height, radius) {
 }
 
 function drawRoom(now) {
-  const wall = context.createLinearGradient(0, 0, 0, view.height * 0.58);
+  const wall = context.createLinearGradient(0, 0, 0, Math.max(view.horizonLeftY, view.horizonRightY));
   wall.addColorStop(0, "#faf7f0");
   wall.addColorStop(1, "#e7ddd0");
   context.fillStyle = wall;
   context.fillRect(0, 0, view.width, view.height);
 
-  context.fillStyle = "rgba(101, 73, 48, 0.08)";
-  for (let y = 42; y < view.height * 0.54; y += 56) context.fillRect(0, y, view.width, 1);
+  context.strokeStyle = "rgba(101, 73, 48, 0.08)";
+  context.lineWidth = 1;
+  for (let y = 42; y < view.horizonLeftY - 12; y += 56) {
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(view.width, y + view.horizonRightY - view.horizonLeftY);
+    context.stroke();
+  }
 
-  const floorY = view.height * 0.54;
-  const floor = context.createLinearGradient(0, floorY, 0, view.height);
+  const floor = context.createLinearGradient(0, Math.min(view.horizonLeftY, view.horizonRightY), 0, view.height);
   floor.addColorStop(0, "#b98255");
   floor.addColorStop(1, "#6d3d24");
   context.fillStyle = floor;
-  context.fillRect(0, floorY, view.width, view.height - floorY);
+  context.beginPath();
+  context.moveTo(0, view.horizonLeftY);
+  context.lineTo(view.width, view.horizonRightY);
+  context.lineTo(view.width, view.height);
+  context.lineTo(0, view.height);
+  context.closePath();
+  context.fill();
 
   context.strokeStyle = "rgba(75, 42, 24, 0.18)";
   context.lineWidth = 1;
   for (let offset = -3; offset <= 3; offset += 1) {
+    const startX = view.vanishingX + offset * view.width * 0.008;
+    const endX = view.vanishingX + offset * view.width * 0.22;
     context.beginPath();
-    context.moveTo(view.targetX + offset * view.width * 0.055, floorY);
-    context.lineTo(view.targetX + offset * view.width * 0.22, view.height);
+    context.moveTo(startX, horizonYAt(startX));
+    context.lineTo(endX, view.height);
     context.stroke();
   }
+
   context.fillStyle = "rgba(54, 34, 22, 0.18)";
-  context.fillRect(0, floorY - 4, view.width, 7);
+  context.beginPath();
+  context.moveTo(0, view.horizonLeftY - 4);
+  context.lineTo(view.width, view.horizonRightY - 4);
+  context.lineTo(view.width, view.horizonRightY + 3);
+  context.lineTo(0, view.horizonLeftY + 3);
+  context.closePath();
+  context.fill();
 
   const windowWidth = view.width * 0.19;
   const windowHeight = view.height * 0.25;
-  const windowX = view.width * 0.74;
+  const windowX = view.width * (0.74 + 0.01 * view.tiltStrength);
   const windowY = view.height * 0.11;
+  context.save();
+  context.translate(windowX + windowWidth / 2, windowY + windowHeight / 2);
+  context.rotate(view.rollRadians);
   context.fillStyle = "#fffdf7";
-  context.fillRect(windowX - 6, windowY - 6, windowWidth + 12, windowHeight + 12);
-  const sky = context.createLinearGradient(0, windowY, 0, windowY + windowHeight);
+  context.fillRect(-windowWidth / 2 - 6, -windowHeight / 2 - 6, windowWidth + 12, windowHeight + 12);
+  const sky = context.createLinearGradient(0, -windowHeight / 2, 0, windowHeight / 2);
   sky.addColorStop(0, "#aad7df");
   sky.addColorStop(1, "#e5eee5");
   context.fillStyle = sky;
-  context.fillRect(windowX, windowY, windowWidth, windowHeight);
+  context.fillRect(-windowWidth / 2, -windowHeight / 2, windowWidth, windowHeight);
   context.fillStyle = "rgba(255, 255, 255, 0.65)";
-  context.fillRect(windowX + windowWidth * 0.48, windowY, 5, windowHeight);
-  context.fillRect(windowX, windowY + windowHeight * 0.48, windowWidth, 5);
+  context.fillRect(-2.5, -windowHeight / 2, 5, windowHeight);
+  context.fillRect(-windowWidth / 2, -2.5, windowWidth, 5);
+  context.restore();
 
   context.fillStyle = "#f2cf68";
   context.save();
-  context.translate(view.width * 0.16, view.height * 0.2);
-  context.rotate(-0.035);
+  context.translate(view.width * (0.16 - 0.01 * view.tiltStrength), view.height * 0.2);
+  context.rotate(-0.035 + view.rollRadians);
   context.fillRect(-46, -32, 92, 64);
   context.fillStyle = "rgba(77, 62, 42, 0.42)";
   context.fillRect(-29, -11, 54, 3);
@@ -265,11 +326,12 @@ function drawRoom(now) {
 function drawFan(now) {
   const speed = Math.max(0.7, Math.abs(game.windSpeed) * 1.5);
   const rotation = reduceMotion ? 0 : (now / 1000) * speed;
-  const fanX = view.width * (game.windSpeed < 0 ? 0.72 : 0.28);
-  const fanY = view.targetY - view.height * 0.055;
+  const fanX = view.width * (game.windSpeed < 0 ? 0.73 : 0.29);
+  const fanY = horizonYAt(fanX) - view.height * 0.015;
 
   context.save();
   context.translate(fanX, fanY);
+  context.rotate(view.rollRadians);
   context.fillStyle = "#615c57";
   context.fillRect(-5, 28, 10, 54);
   context.fillStyle = "#44413e";
@@ -309,9 +371,11 @@ function drawWind(now, fanX, fanY) {
   context.setLineDash([12, 12]);
   context.lineDashOffset = reduceMotion ? 0 : (-now / 22) * direction;
   for (let index = -1; index <= 1; index += 1) {
+    const startX = fanX + direction * 42;
+    const endX = fanX + direction * (42 + span);
     context.beginPath();
-    context.moveTo(fanX + direction * 42, fanY + index * 15);
-    context.lineTo(fanX + direction * (42 + span), fanY + index * 15);
+    context.moveTo(startX, fanY + index * 15);
+    context.lineTo(endX, fanY + index * 15 + (endX - startX) * view.rollSlope);
     context.stroke();
   }
   context.restore();
@@ -323,11 +387,27 @@ function drawBin() {
   const openingWidth = game.canWidth * view.lateralScale;
   const openingDepth = Math.max(18, game.canDepth * view.lateralScale * 0.34);
   const bodyHeight = Math.min(game.canHeight * view.verticalScale * 0.58, view.height * 0.23);
+  const bodyBottomY = openingY + bodyHeight;
+  const bottomCenterX = centerX + openingWidth * 0.025 * view.tiltStrength;
+  const topLeftX = centerX - openingWidth * 0.5;
+  const topRightX = centerX + openingWidth * 0.46;
+  const topLeftY = openingY - Math.sin(view.rimRotation) * openingWidth * 0.48 + openingDepth * 0.08;
+  const topRightY = openingY + Math.sin(view.rimRotation) * openingWidth * 0.44 + openingDepth * 0.08;
+  const bottomLeftX = bottomCenterX - openingWidth * 0.35;
+  const bottomRightX = bottomCenterX + openingWidth * 0.39;
 
   context.save();
   context.fillStyle = "rgba(40, 30, 24, 0.22)";
   context.beginPath();
-  context.ellipse(centerX + 12, openingY + bodyHeight + 9, openingWidth * 0.52, 11, 0, 0, Math.PI * 2);
+  context.ellipse(
+    bottomCenterX + 14,
+    bodyBottomY + 9,
+    openingWidth * 0.52,
+    11,
+    view.rimRotation,
+    0,
+    Math.PI * 2,
+  );
   context.fill();
 
   const metal = context.createLinearGradient(centerX - openingWidth / 2, 0, centerX + openingWidth / 2, 0);
@@ -336,25 +416,46 @@ function drawBin() {
   metal.addColorStop(1, "#626d6f");
   context.fillStyle = metal;
   context.beginPath();
-  context.moveTo(centerX - openingWidth * 0.48, openingY + openingDepth * 0.08);
-  context.lineTo(centerX + openingWidth * 0.48, openingY + openingDepth * 0.08);
-  context.lineTo(centerX + openingWidth * 0.37, openingY + bodyHeight);
-  context.lineTo(centerX - openingWidth * 0.37, openingY + bodyHeight);
+  context.moveTo(topLeftX, topLeftY);
+  context.lineTo(topRightX, topRightY);
+  context.lineTo(bottomRightX, bodyBottomY);
+  context.lineTo(bottomLeftX, bodyBottomY);
+  context.closePath();
+  context.fill();
+
+  context.fillStyle = "rgba(34, 47, 49, 0.12)";
+  context.beginPath();
+  context.moveTo(centerX + openingWidth * 0.05, openingY + openingDepth * 0.18);
+  context.lineTo(topRightX, topRightY);
+  context.lineTo(bottomRightX, bodyBottomY);
+  context.lineTo(bottomCenterX + openingWidth * 0.04, bodyBottomY);
   context.closePath();
   context.fill();
 
   context.strokeStyle = "rgba(41, 51, 53, 0.36)";
   context.lineWidth = 1;
   for (let offset = -0.22; offset <= 0.22; offset += 0.11) {
+    const startX = centerX + openingWidth * offset;
     context.beginPath();
-    context.moveTo(centerX + openingWidth * offset, openingY + openingDepth * 0.42);
-    context.lineTo(centerX + openingWidth * offset * 0.74, openingY + bodyHeight - 8);
+    context.moveTo(
+      startX,
+      openingY + openingDepth * 0.42 + (startX - centerX) * view.rollSlope,
+    );
+    context.lineTo(bottomCenterX + openingWidth * offset * 0.72, bodyBottomY - 8);
     context.stroke();
   }
 
   context.fillStyle = "#283234";
   context.beginPath();
-  context.ellipse(centerX, openingY, openingWidth / 2, openingDepth / 2, 0, 0, Math.PI * 2);
+  context.ellipse(
+    centerX,
+    openingY,
+    openingWidth / 2,
+    openingDepth / 2,
+    view.rimRotation,
+    0,
+    Math.PI * 2,
+  );
   context.fill();
   context.strokeStyle = rimFlash > 0 ? "#f3b23d" : "#c5cdcd";
   context.lineWidth = rimFlash > 0 ? 7 : 5;
@@ -362,7 +463,15 @@ function drawBin() {
   context.strokeStyle = "rgba(255, 255, 255, 0.38)";
   context.lineWidth = 1.5;
   context.beginPath();
-  context.ellipse(centerX, openingY - 1, openingWidth * 0.46, openingDepth * 0.38, 0, Math.PI, Math.PI * 2);
+  context.ellipse(
+    centerX,
+    openingY - 1,
+    openingWidth * 0.46,
+    openingDepth * 0.38,
+    view.rimRotation,
+    Math.PI,
+    Math.PI * 2,
+  );
   context.stroke();
   context.restore();
 }
@@ -373,12 +482,20 @@ function drawPaper(ball = game.ball) {
 
   context.save();
   context.translate(position.x, position.y);
-  context.rotate(reduceMotion ? 0 : ball.elapsed * 7);
   context.fillStyle = `rgba(31, 25, 21, ${clamp(0.18 + ball.y * 0.2, 0.07, 0.22)})`;
   context.beginPath();
-  context.ellipse(5, radius + 9, radius * 0.9, radius * 0.36, 0, 0, Math.PI * 2);
+  context.ellipse(
+    6 + view.tiltStrength * 3,
+    radius + 9,
+    radius * 0.9,
+    radius * 0.36,
+    view.rollRadians,
+    0,
+    Math.PI * 2,
+  );
   context.fill();
 
+  context.rotate(reduceMotion ? 0 : ball.elapsed * 7);
   context.shadowColor = "rgba(72, 55, 41, 0.14)";
   context.shadowBlur = 8;
   context.fillStyle = "#fffdf8";
